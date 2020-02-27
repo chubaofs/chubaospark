@@ -50,6 +50,7 @@ private[spark] class ChubaoSorter[K, V, C](
   }
 
   def insertAll(records: Iterator[Product2[K, V]]): Unit = {
+    //TODO:
 
   }
 
