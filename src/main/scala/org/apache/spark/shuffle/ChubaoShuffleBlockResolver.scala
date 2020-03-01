@@ -25,12 +25,16 @@ import org.apache.spark.storage.ShuffleBlockId
 /**
   * Created by justice on 2020/2/17.
   */
-class ChubaoShuffleBlockResolver(appId: String)
+private[spark] class ChubaoShuffleBlockResolver(appId: String)
   extends ShuffleBlockResolver
   with Logging {
 
   override def getBlockData(blockId: ShuffleBlockId): ManagedBuffer =
     throw new UnsupportedOperationException("UnsupportedOperation.")
+
+  def getDataFile(shuffleId: Int, mapId: Int): File = {
+    blockManager.diskBlockManager.getFile(ShuffleDataBlockId(shuffleId, mapId, NOOP_REDUCE_ID))
+  }
 
   def removeDataByMap(shuffleId: Int, mapId: Int): Unit = {
     //TODO:
