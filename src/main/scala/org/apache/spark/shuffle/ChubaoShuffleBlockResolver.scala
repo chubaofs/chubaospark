@@ -17,6 +17,7 @@
 
 package org.apache.spark.shuffle
 
+import java.io.File
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.buffer.ManagedBuffer
@@ -29,20 +30,42 @@ private[spark] class ChubaoShuffleBlockResolver(appId: String)
   extends ShuffleBlockResolver
   with Logging {
 
+  val NOOP_REDUCE_ID = 0
+
   override def getBlockData(blockId: ShuffleBlockId): ManagedBuffer =
     throw new UnsupportedOperationException("UnsupportedOperation.")
 
   def getDataFile(shuffleId: Int, mapId: Int): File = {
-    blockManager.diskBlockManager.getFile(ShuffleDataBlockId(shuffleId, mapId, NOOP_REDUCE_ID))
+    //TODO:
+  }
+
+  def getDataTmpFile(shuffleId: Int, mapId: Int): File = {
+    //TODO:
   }
 
   def removeDataByMap(shuffleId: Int, mapId: Int): Unit = {
     //TODO:
   }
 
+  /**
+    *
+    * @param shuffleId
+    * @param mapId
+    * @param lengths
+    * @param dataTmp
+    */
+  def writeIndexFileAndCommit(shuffleId: Int, mapId: Int, lengths: Array[Long], dataTmp: File): Unit = {
+    //TODO:
+
+  }
+
+
   override def stop(): Unit = {
 
   }
 
+}
+
+private[spark] object ChubaoShuffleBlockResolver {
 }
 

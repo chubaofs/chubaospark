@@ -20,9 +20,10 @@ package org.apache.spark.shuffle
 import org.apache.spark._
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.MapStatus
+import org.apache.spark.storage.ShuffleBlockId
 
 private[spark] class ChubaoShuffleWriter[K, V, C] (
-  shuffleBlockResolver: ChubaoShuffleBlockResolver,
+  resolver: ChubaoShuffleBlockResolver,
   handle: BaseShuffleHandle[K, V, C],
   mapId: Int,
   context: TaskContext)
@@ -30,8 +31,11 @@ private[spark] class ChubaoShuffleWriter[K, V, C] (
   with Logging {
 
   private val dep = handle.dependency
-
+  private val blockManager = SparkEnv.get.blockManager
   private var sorter: ChubaoSorter[K, V, _] = null
+  private var mapStatus: MapStatus = null
+  private var stopping = false
+  private val writeMetrics = context.taskMetrics().shuffleWriteMetrics
 
   override def write(records: Iterator[Product2[K, V]]): Unit = {
     sorter = if (dep.mapSideCombine) {
@@ -44,26 +48,39 @@ private[spark] class ChubaoShuffleWriter[K, V, C] (
     }
     sorter.insertAll(records)
 
-    //TODO:
-    val output = shuffleBlockResolver.getDataFile(dep.shuffleId, mapId)
-    val tmp = Utils.tempFileWith(output)
+    val tmp = resolver.getDataTmpFile(dep.shuffleId, mapId)
     try {
-      val blockId = ShuffleBlockId(dep.shuffleId, mapId, IndexShuffleBlockResolver.NOOP_REDUCE_ID)
+      val blockId = ShuffleBlockId(dep.shuffleId, mapId, resolver.NOOP_REDUCE_ID)
       val partitionLengths = sorter.writePartitionedFile(blockId, tmp)
-      shuffleBlockResolver.writeIndexFileAndCommit(dep.shuffleId, mapId, partitionLengths, tmp)
+      resolver.writeIndexFileAndCommit(dep.shuffleId, mapId, partitionLengths, tmp)
       mapStatus = MapStatus(blockManager.shuffleServerId, partitionLengths)
     } finally {
       if (tmp.exists() && !tmp.delete()) {
         logError(s"Error while deleting temp file ${tmp.getAbsolutePath}")
       }
     }
-
   }
 
   /** @inheritdoc */
   override def stop(success: Boolean): Option[MapStatus] = {
-    //TODO:
-
-    None
+    try {
+      if (stopping) {
+        return None
+      }
+      stopping = true
+      if (success) {
+        Option(mapStatus)
+      } else {
+        None
+      }
+    } finally {
+      if (sorter != null) {
+        val startTime = System.nanoTime()
+        sorter.stop()
+        writeMetrics.incWriteTime(System.nanoTime - startTime)
+        sorter = null
+      }
+    }
   }
 }
+

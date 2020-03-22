@@ -64,5 +64,9 @@ private[spark] class ChubaoSorter[K, V, C](
 
     lengths
   }
+
+  def stop(): Unit = {
+    //TODO:
+  }
 }
 
