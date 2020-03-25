@@ -40,17 +40,15 @@ private[spark] class ChubaoSorter[K, V, C](
   private val numPartitions = partitioner.map(_.numPartitions).getOrElse(1)
 
   override protected def spill(collection: WritablePartitionedPairCollection[K, C]): Unit = {
-    //TODO:
+
   }
 
   override protected def forceSpill(): Boolean = {
-    //TODO:
 
     false
   }
 
   def insertAll(records: Iterator[Product2[K, V]]): Unit = {
-    //TODO:
 
   }
 
@@ -60,13 +58,11 @@ private[spark] class ChubaoSorter[K, V, C](
 
     val lengths = new Array[Long](numPartitions)
 
-    //TODO:
 
     lengths
   }
 
   def stop(): Unit = {
-    //TODO:
   }
 }
 

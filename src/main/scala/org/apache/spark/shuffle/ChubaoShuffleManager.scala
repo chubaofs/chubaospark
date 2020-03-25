@@ -24,6 +24,7 @@ import org.apache.spark._
 import org.apache.spark.internal.Logging
 import org.apache.spark.shuffle.sort._
 import org.apache.spark.shuffle.sort.SortShuffleManager.MAX_SHUFFLE_OUTPUT_PARTITIONS_FOR_SERIALIZED_MODE
+import org.apache.spark.storage.ChubaoFSStorageManager
 
 /**
   * Created by justice on 2020/2/17.
@@ -32,11 +33,13 @@ private[spark] class ChubaoShuffleManager(conf: SparkConf)
   extends ShuffleManager
   with Logging {
 
-  logInfo(s"initialize ChubaoShuffleManager ${ChubaoShuffleManager.version}")
+  logInfo(s"initialize ChubaoSpark ${ChubaoShuffleManager.version}")
 
   private val numMapsForShuffle = new ConcurrentHashMap[Int, Int]()
 
-  override lazy val shuffleBlockResolver = new ChubaoShuffleBlockResolver(conf.getAppId)
+  private val shuffleStorageManger = new ChubaoFSStorageManager(conf)
+
+  override lazy val shuffleBlockResolver = new ChubaoShuffleBlockResolver(conf)
 
   override def registerShuffle[K, V, C](
      shuffleId: Int,
@@ -71,7 +74,7 @@ private[spark] class ChubaoShuffleManager(conf: SparkConf)
 
     numMapsForShuffle.putIfAbsent(handle.shuffleId, handle.asInstanceOf[BaseShuffleHandle[_, _, _]].numMaps)
 
-    val env = SparkEnv.get
+    //val env = SparkEnv.get
     handle match {
       case unsafeShuffleHandle: ChubaoSerializedShuffleHandle[K@unchecked, V@unchecked] =>
         new UnsafeShuffleWriter(
@@ -164,7 +167,7 @@ private[spark] class ChubaoSerializedShuffleHandle[K, V](
 object ChubaoShuffleManager {
   def version: String = {
     val properties = new Properties()
-    properties.load(getClass.getClassLoader.getResourceAsStream("chubao-spark-shuffle.properties"))
-    properties.getProperty("chubao-spark-shuffle.version")
+    properties.load(getClass.getClassLoader.getResourceAsStream("chubao-spark.properties"))
+    properties.getProperty("chubao-spark.version")
   }
 }

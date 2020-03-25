@@ -19,32 +19,51 @@ package org.apache.spark.shuffle
 
 import java.io.File
 
+import org.apache.spark.{SparkConf, SparkEnv}
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.buffer.ManagedBuffer
-import org.apache.spark.storage.ShuffleBlockId
+import org.apache.spark.storage.{BlockManagerId, ChubaoFSStorageManager, ShuffleBlockId, ShuffleIndexBlockId}
 
 /**
   * Created by justice on 2020/2/17.
   */
-private[spark] class ChubaoShuffleBlockResolver(appId: String)
+private[spark] class ChubaoShuffleBlockResolver(conf: SparkConf)
   extends ShuffleBlockResolver
   with Logging {
 
+  def getAppId: String = conf.getAppId
+
   val NOOP_REDUCE_ID = 0
+
+  val blockManagerId: BlockManagerId = BlockManagerId(getAppId, "cfs", 666, None)
+
+  private lazy val storageManger = new ChubaoFSStorageManager(conf)
 
   override def getBlockData(blockId: ShuffleBlockId): ManagedBuffer =
     throw new UnsupportedOperationException("UnsupportedOperation.")
 
-  def getDataFile(shuffleId: Int, mapId: Int): File = {
-    //TODO:
-  }
+  def getDataFile(shuffleId: Int, mapId: Int): File =
+    storageManger.getDataFile(shuffleId, mapId, NOOP_REDUCE_ID)
 
-  def getDataTmpFile(shuffleId: Int, mapId: Int): File = {
-    //TODO:
-  }
+
+  private def getIndexFile(shuffleId: Int, mapId: Int): File =
+    storageManger.getIndexFile(shuffleId, mapId, NOOP_REDUCE_ID)
+
 
   def removeDataByMap(shuffleId: Int, mapId: Int): Unit = {
-    //TODO:
+    var file = getDataFile(shuffleId, mapId)
+    if (file.exists()) {
+      if (!file.delete()) {
+        logWarning(s"Error deleting data ${file.getPath()}")
+      }
+    }
+
+    file = getIndexFile(shuffleId, mapId)
+    if (file.exists()) {
+      if (!file.delete()) {
+        logWarning(s"Error deleting index ${file.getPath()}")
+      }
+    }
   }
 
   /**
@@ -55,17 +74,16 @@ private[spark] class ChubaoShuffleBlockResolver(appId: String)
     * @param dataTmp
     */
   def writeIndexFileAndCommit(shuffleId: Int, mapId: Int, lengths: Array[Long], dataTmp: File): Unit = {
-    //TODO:
 
   }
 
 
   override def stop(): Unit = {
-
   }
 
 }
 
 private[spark] object ChubaoShuffleBlockResolver {
+  val NOOP_REDUCE_ID = 0
 }
 

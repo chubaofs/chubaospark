@@ -21,6 +21,7 @@ import org.apache.spark._
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.MapStatus
 import org.apache.spark.storage.ShuffleBlockId
+import org.apache.spark.util.Utils
 
 private[spark] class ChubaoShuffleWriter[K, V, C] (
   resolver: ChubaoShuffleBlockResolver,
@@ -48,7 +49,8 @@ private[spark] class ChubaoShuffleWriter[K, V, C] (
     }
     sorter.insertAll(records)
 
-    val tmp = resolver.getDataTmpFile(dep.shuffleId, mapId)
+    val output = resolver.getDataFile(dep.shuffleId, mapId)
+    val tmp = Utils.tempFileWith(output)
     try {
       val blockId = ShuffleBlockId(dep.shuffleId, mapId, resolver.NOOP_REDUCE_ID)
       val partitionLengths = sorter.writePartitionedFile(blockId, tmp)
@@ -80,6 +82,19 @@ private[spark] class ChubaoShuffleWriter[K, V, C] (
         writeMetrics.incWriteTime(System.nanoTime - startTime)
         sorter = null
       }
+    }
+  }
+}
+
+private[spark] object ChubaoShuffleWriter {
+  def shouldBypassMergeSort(conf: SparkConf, dep: ShuffleDependency[_, _, _]): Boolean = {
+    // We cannot bypass sorting if we need to do map-side aggregation.
+    if (dep.mapSideCombine) {
+      require(dep.aggregator.isDefined, "Map-side combine without Aggregator specified!")
+      false
+    } else {
+      val bypassMergeThreshold: Int = conf.getInt("spark.shuffle.chubao.bypassMergeThreshold", 200)
+      dep.partitioner.numPartitions <= bypassMergeThreshold
     }
   }
 }

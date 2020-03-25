@@ -40,10 +40,15 @@ import org.apache.spark.util.io.ChunkedByteBufferOutputStream
 
 private[spark]
 final class ChubaoShuffleBlockFetcherIterator(
+   context: TaskContext,
    shuffleId: Int,
+   maxBytesInFlight: Long,
+   maxReqsInFlight: Int,
+   maxBlocksInFlightPerAddress: Int,
+   maxReqSizeShuffleToMem: Long,
+   detectCorrupt: Boolean,
    startPartition: Int,
    endPartition: Int,
-   context: TaskContext,
    streamWrapper: (BlockId, InputStream) => InputStream)
   extends Iterator[(String, InputStream)] with Logging {
 
@@ -61,11 +66,15 @@ final class ChubaoShuffleBlockFetcherIterator(
     if (!hasNext) {
       throw new NoSuchElementException
     }
-    //TODO: next
 
   }
 }
 
+/**
+  *
+  * @param delegate
+  * @param iterator
+  */
 private class ChubaoBufferReleasingInputStream(
   private val delegate: InputStream,
   private val iterator: ChubaoShuffleBlockFetcherIterator)

@@ -39,4 +39,10 @@ object ChubaoShuffleOpts {
         f(ConfigBuilder(optionKey))
       }
   }
+
+  lazy val shuffleRootFolder: ConfigEntry[String] =
+    ConfigBuilder("spark.shuffle.root.folder")
+      .doc("location of the shuffle root folder")
+      .stringConf
+      .createWithDefault("cfs://mnt/cfs")
 }
