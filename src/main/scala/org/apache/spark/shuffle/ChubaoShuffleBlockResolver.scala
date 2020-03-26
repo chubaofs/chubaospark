@@ -77,6 +77,72 @@ private[spark] class ChubaoShuffleBlockResolver(conf: SparkConf)
 
   }
 
+  def getBlockData(blockId: BlockId): Option[BlockDataStreamInfo] = {
+    if (blockId.isShuffle) {
+      val shuffleBlockId = blockId.asInstanceOf[ShuffleBlockId]
+      if (shuffleTypeManager.isHashBasedShuffle(shuffleBlockId)) {
+        readHashBasedPartition(shuffleBlockId)
+      } else {
+        readPartitionByIndex(shuffleBlockId)
+      }
+    } else {
+      logError(s"only works for shuffle block id, current block id: $blockId")
+      None
+    }
+  }
+
+  private def readHashBasedPartition(shuffleBlockId: ShuffleBlockId) = {
+    val dataFile = getDataFile(
+      shuffleBlockId.shuffleId,
+      shuffleBlockId.mapId,
+      shuffleBlockId.reduceId)
+
+    if (traceDataChecksum) logPartitionMd5(dataFile)
+
+    val stream = dataFile.makeBufferedInputStream()
+    Some(BlockDataStreamInfo(stream, dataFile.getSize))
+  }
+
+  private def readPartitionByIndex(shuffleBlockId: ShuffleBlockId) = {
+    val partitionLoc = shuffleCache.getPartitionLoc(shuffleBlockId)
+    partitionLoc match {
+      case Some(partition) =>
+        val dataFile = getDataFile(shuffleBlockId)
+
+        if (traceDataChecksum) logPartitionMd5(dataFile, partition)
+
+        val stream = dataFile.makeBufferedInputStreamWithin(partition)
+        Some(BlockDataStreamInfo(stream, partition.length))
+      case None => None
+    }
+  }
+
+  private def logPartitionMd5(dataFile: ShuffleFile): Some[InputStream] =
+    logPartitionMd5(dataFile, 0, dataFile.getSize)
+
+  private def logPartitionMd5(
+                               dataFile: ShuffleFile, partitionLoc: PartitionLoc): Some[InputStream] =
+    logPartitionMd5(dataFile, partitionLoc.start, partitionLoc.end)
+
+  private def logPartitionMd5(
+                               dataFile: ShuffleFile,
+                               offset: Long,
+                               nextOffset: Long): Some[InputStream] = {
+    logDebug(s"read partition from $offset to $nextOffset " +
+      s"in ${dataFile.getPath} size ${dataFile.getSize}.")
+    SplashUtils.withResources {
+      val stream = dataFile.makeBufferedInputStreamWithin(offset, nextOffset)
+      new BufferedInputStream(stream)
+    } { is =>
+      val buf = new Array[Byte]((nextOffset - offset).asInstanceOf[ShuffleId])
+      is.read(buf)
+      val md: MessageDigest = MessageDigest.getInstance("MD5")
+      val theDigest: Array[Byte] = md.digest(buf)
+      val str = theDigest.map("%02X" format _).mkString
+      logDebug(s"md5 for ${dataFile.getPath} offset $offset, length ${buf.length}: $str")
+      Some(is)
+    }
+  }
 
   override def stop(): Unit = {
   }

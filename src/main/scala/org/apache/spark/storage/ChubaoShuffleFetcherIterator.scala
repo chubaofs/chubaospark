@@ -16,40 +16,15 @@
 
 package org.apache.spark.storage
 
-import java.io.{ByteArrayInputStream, File, IOException, InputStream}
-import java.nio.ByteBuffer
-import java.util.concurrent.LinkedBlockingQueue
+import java.io.InputStream
 
-import io.netty.buffer.{ByteBufInputStream, Unpooled}
-import javax.annotation.concurrent.GuardedBy
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FSDataInputStream, FileSystem, Path}
-
-import scala.collection.mutable
-import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet, Queue}
 import org.apache.spark.{SparkEnv, SparkException, TaskContext}
 import org.apache.spark.internal.{Logging, config}
-import org.apache.spark.network.buffer.{FileSegmentManagedBuffer, ManagedBuffer}
-import org.apache.spark.network.shuffle.{BlockFetchingListener, ShuffleClient, TempFileManager}
-import org.apache.spark.shuffle.FetchFailedException
-import org.apache.spark.util.Utils
-import org.apache.spark.util.io.ChunkedByteBufferOutputStream
-/**
-  * Created by justice on 2020/2/27.
-  */
+import org.apache.spark.shuffle.ChubaoShuffleBlockResolver
 
-private[spark]
-final class ChubaoShuffleBlockFetcherIterator(
-   context: TaskContext,
-   shuffleId: Int,
-   maxBytesInFlight: Long,
-   maxReqsInFlight: Int,
-   maxBlocksInFlightPerAddress: Int,
-   maxReqSizeShuffleToMem: Long,
-   detectCorrupt: Boolean,
-   startPartition: Int,
-   endPartition: Int,
-   streamWrapper: (BlockId, InputStream) => InputStream)
+private[spark] final class ChubaoShuffleFetcherIterator(
+    resolver: ChubaoShuffleBlockResolver,
+    shuffleBlocks: Iterator[BlockId])
   extends Iterator[(String, InputStream)] with Logging {
 
   override def hasNext: Boolean = partitionInputStream.available() > 0
@@ -77,7 +52,7 @@ final class ChubaoShuffleBlockFetcherIterator(
   */
 private class ChubaoBufferReleasingInputStream(
   private val delegate: InputStream,
-  private val iterator: ChubaoShuffleBlockFetcherIterator)
+  private val iterator: ChubaoShuffleFetcherIterator)
   extends InputStream {
   private[this] var closed = false
 

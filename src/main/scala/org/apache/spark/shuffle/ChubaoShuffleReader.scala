@@ -36,78 +36,10 @@ private[spark] class ChubaoShuffleReader[K, C](
   private val dep = handle.dependency
 
   override def read(): Iterator[Product2[K, C]] = {
-    val wrappedStreams = new ChubaoShuffleBlockFetcherIterator(
-      context,
-      mapOutputTracker.getMapSizesByExecutorId(handle.shuffleId, startPartition, endPartition),
-      serializerManager.wrapStream,
-      // Note: we use getSizeAsMb when no suffix is provided for backwards compatibility
-      SparkEnv.get.conf.getSizeAsMb("spark.reducer.maxSizeInFlight", "48m") * 1024 * 1024,
-      SparkEnv.get.conf.getInt("spark.reducer.maxReqsInFlight", Int.MaxValue),
-      SparkEnv.get.conf.get(config.REDUCER_MAX_BLOCKS_IN_FLIGHT_PER_ADDRESS),
-      SparkEnv.get.conf.get(config.MAX_REMOTE_BLOCK_SIZE_FETCH_TO_MEM),
-      SparkEnv.get.conf.getBoolean("spark.shuffle.detectCorrupt", true))
-
-    val serializerInstance = dep.serializer.newInstance()
-
-    // Create a key/value iterator for each stream
-    val recordIter = wrappedStreams.flatMap { case (blockId, wrappedStream) =>
-      // Note: the asKeyValueIterator below wraps a key/value iterator inside of a
-      // NextIterator. The NextIterator makes sure that close() is called on the
-      // underlying InputStream when all records have been read.
-      serializerInstance.deserializeStream(wrappedStream).asKeyValueIterator
-    }
-
-    // Update the context task metrics for each record read.
-    val readMetrics = context.taskMetrics.createTempShuffleReadMetrics()
-    val metricIter = CompletionIterator[(Any, Any), Iterator[(Any, Any)]](
-      recordIter.map { record =>
-        readMetrics.incRecordsRead(1)
-        record
-      },
-      context.taskMetrics().mergeShuffleReadMetrics())
-
-    // An interruptible iterator must be used here in order to support task cancellation
-    val interruptibleIter = new InterruptibleIterator[(Any, Any)](context, metricIter)
-
-    val aggregatedIter: Iterator[Product2[K, C]] = if (dep.aggregator.isDefined) {
-      if (dep.mapSideCombine) {
-        // We are reading values that are already combined
-        val combinedKeyValuesIterator = interruptibleIter.asInstanceOf[Iterator[(K, C)]]
-        dep.aggregator.get.combineCombinersByKey(combinedKeyValuesIterator, context)
-      } else {
-        // We don't know the value type, but also don't care -- the dependency *should*
-        // have made sure its compatible w/ this aggregator, which will convert the value
-        // type to the combined type C
-        val keyValuesIterator = interruptibleIter.asInstanceOf[Iterator[(K, Nothing)]]
-        dep.aggregator.get.combineValuesByKey(keyValuesIterator, context)
-      }
-    } else {
-      require(!dep.mapSideCombine, "Map-side combine without Aggregator specified!")
-      interruptibleIter.asInstanceOf[Iterator[Product2[K, C]]]
-    }
-
-    // Sort the output if there is a sort ordering defined.
-    val resultIter = dep.keyOrdering match {
-      case Some(keyOrd: Ordering[K]) =>
-        // Create an ExternalSorter to sort the data.
-        val sorter =
-          new ChubaoSorter[K, C, C](context, ordering = Some(keyOrd), serializer = dep.serializer)
-        sorter.insertAll(aggregatedIter)
-        context.addTaskCompletionListener(_ => {
-          sorter.stop()
-        })
-        CompletionIterator[Product2[K, C], Iterator[Product2[K, C]]](sorter.iterator, sorter.stop())
-      case None =>
-        aggregatedIter
-    }
-
-    resultIter match {
-      case _: InterruptibleIterator[Product2[K, C]] => resultIter
-      case _ =>
-        // Use another interruptible iterator here to support task cancellation as aggregator
-        // or(and) sorter may have consumed previous interruptible iterator.
-        new InterruptibleIterator[Product2[K, C]](context, resultIter)
-    }
+    val shuffleBlocks = mapOutputTracker.getMapSizesByExecutorId(
+      handle.shuffleId, startPartition, endPartition)
+      .flatMap(_._2)
+    readShuffleBlocks(shuffleBlocks)
   }
 
   def readShuffleBlocks(shuffleBlocks: Iterator[(BlockId, Long)]): Iterator[Product2[K, C]] = {
@@ -115,6 +47,8 @@ private[spark] class ChubaoShuffleReader[K, C](
     val serializer = dep.serializer.newInstance()
 
 
+    val nonEmptyBlocks = shuffleBlocks.filter(_._2 > 0).map(_._1)
+    val fetcherIterator = ChubaoShuffleFetcherIterator(resolver, nonEmptyBlocks)
 
 
   }
